@@ -13,6 +13,7 @@ type AppStore = {
   transition: 'cut' | 'fade'
   mixer: MixerState
   roomCode: string | null
+  peerId: string | null
   pips: PipOverlay[]
   telop: TelopState
   lowerThird: LowerThirdState
@@ -38,6 +39,7 @@ type AppStore = {
   setFadeDuration: (d: number) => void
   setMixer: (m: Partial<MixerState>) => void
   setRoomCode: (c: string | null) => void
+  setPeerId: (id: string) => void
   setPips: (p: PipOverlay[]) => void
   addPip: (p: PipOverlay) => void
   updatePip: (id: string, patch: Partial<PipOverlay>) => void
@@ -55,6 +57,19 @@ type AppStore = {
 const STORAGE_KEY = 'obs-app-state-v2'
 const BLOB_STORE = localforage.createInstance({ name: 'obs-blobs' })
 export const BLOB_STORE_EXPORT = BLOB_STORE
+
+function genPeerId() {
+  // try localStorage first for migration
+  try {
+    const existing = localStorage.getItem('obs-peer-id')
+    if (existing) return existing
+  } catch {}
+  const id = 'obs-' + Math.random().toString(36).slice(2, 8) + '-' + Date.now().toString(36).slice(-4)
+  try {
+    localStorage.setItem('obs-peer-id', id)
+  } catch {}
+  return id
+}
 
 export const useAppStore = create<AppStore>((set, get) => ({
   sources: [
@@ -78,6 +93,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   previewIds: ['standby-1', null, null],
   activePreviewIndex: 0,
   programId: 'standby-1',
+  peerId: genPeerId(),
   isBlack: false,
   fadeDuration: 300,
   transition: 'fade',
@@ -202,6 +218,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setFadeDuration: (d) => set({ fadeDuration: d }),
   setMixer: (m) => set((s) => ({ mixer: { ...s.mixer, ...m } })),
   setRoomCode: (c) => set({ roomCode: c }),
+  setPeerId: (id) => {
+    try {
+      localStorage.setItem('obs-peer-id', id)
+    } catch {}
+    set({ peerId: id })
+    get().persist()
+  },
   setPips: (p) => {
     set({ pips: p })
     get().persist()
@@ -276,6 +299,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
         while (previewIds.length < 3) previewIds.push(null)
         previewIds = previewIds.slice(0, 3)
         const previewId = previewIds[activePreviewIndex] ?? previewIds.find((v) => v !== null) ?? null
+        // peerId: migrate from localStorage if not in parsed
+        let peerId: string | null = parsed.peerId ?? null
+        if (!peerId) {
+          try {
+            peerId = localStorage.getItem('obs-peer-id')
+          } catch {}
+          if (!peerId) peerId = get().peerId
+        } else {
+          try {
+            localStorage.setItem('obs-peer-id', peerId)
+          } catch {}
+        }
         set({
           sources: sources.length ? sources : get().sources,
           previewId,
@@ -286,12 +321,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
           transition: parsed.transition ?? get().transition,
           mixer: parsed.mixer ?? get().mixer,
           roomCode: parsed.roomCode ?? null,
+          peerId,
           pips: parsed.pips ?? [],
           telop: telop,
           lowerThird: parsed.lowerThird ?? get().lowerThird,
           clock: parsed.clock ?? get().clock,
           playlistAutoAdvance: parsed.playlistAutoAdvance ?? false,
         })
+      } else {
+        // first time: ensure peerId is stored
+        try {
+          const pid = get().peerId
+          if (pid) localStorage.setItem('obs-peer-id', pid)
+        } catch {}
       }
     } catch (e) {
       console.error('hydrate failed', e)
@@ -300,7 +342,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
   persist: async () => {
-    const { sources, previewId, previewIds, activePreviewIndex, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
+    const { sources, previewId, previewIds, activePreviewIndex, programId, fadeDuration, transition, mixer, roomCode, peerId, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
     for (const src of sources) {
       if ((src.type === 'video' || src.type === 'image' || src.type === 'standby' || src.type === 'bgm') && (src as any).url?.startsWith('blob:')) {
         if (!(src as any).blobId) {
@@ -348,6 +390,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       transition,
       mixer,
       roomCode,
+      peerId,
       pips,
       telop: { ...telop, imageUrl: telop.imageUrl?.startsWith('blob:') ? '' : telop.imageUrl },
       lowerThird,
@@ -357,8 +400,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   },
   exportJson: () => {
-    const { sources, previewId, previewIds, activePreviewIndex, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
-    return JSON.stringify({ sources, previewId, previewIds, activePreviewIndex, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance, version: 4 }, null, 2)
+    const { sources, previewId, previewIds, activePreviewIndex, programId, fadeDuration, transition, mixer, roomCode, peerId, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
+    return JSON.stringify({ sources, previewId, previewIds, activePreviewIndex, programId, fadeDuration, transition, mixer, roomCode, peerId, pips, telop, lowerThird, clock, playlistAutoAdvance, version: 4 }, null, 2)
   },
   importJson: (json) => {
     try {
@@ -374,6 +417,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
           previewIds = get().previewIds
         }
         const previewId = previewIds[activePreviewIndex] ?? previewIds.find((v) => v !== null) ?? parsed.previewId ?? null
+        const peerId = parsed.peerId ?? get().peerId
+        if (peerId) {
+          try {
+            localStorage.setItem('obs-peer-id', peerId)
+          } catch {}
+        }
         set({
           sources: parsed.sources,
           previewId,
@@ -384,6 +433,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           transition: parsed.transition ?? 'fade',
           mixer: parsed.mixer,
           roomCode: parsed.roomCode ?? null,
+          peerId,
           pips: parsed.pips ?? [],
           telop: parsed.telop ?? get().telop,
           lowerThird: parsed.lowerThird ?? get().lowerThird,

@@ -162,6 +162,7 @@ export type AppState = {
   fadeDuration: number
   mixer: MixerState
   roomCode: string | null
+  peerId: string | null
   pips: PipOverlay[]
   telop: TelopState
   lowerThird: LowerThirdState

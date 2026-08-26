@@ -5,7 +5,6 @@ import { ProgramView } from '../output/ProgramView'
 import { SlideEditor } from '../editor/SlideEditor'
 import { getDisplayStream } from '../../lib/webrtc/peer'
 import { QRCodeSVG } from 'qrcode.react'
-import { v4 as uuid } from 'uuid'
 import { OverlayPanel } from './OverlayPanel'
 import { LowerThirdPanel } from './LowerThirdPanel'
 import { ClockPanel } from './ClockPanel'
@@ -37,11 +36,10 @@ export function ControlView({ streams, setStreams }: { streams: Map<string, Medi
   const setRoomCode = useAppStore((s) => s.setRoomCode)
 
   const [editingSlideId, setEditingSlideId] = useState<string | null>(null)
-  const [peerId] = useState<string>(() => localStorage.getItem('obs-peer-id') || uuid().slice(0, 8))
+  const peerId = useAppStore((s) => s.peerId) || ''
   const [helpOpen, setHelpOpen] = useState(false)
 
   useEffect(() => {
-    localStorage.setItem('obs-peer-id', peerId)
     if (!roomCode) {
       const code = Math.random().toString(36).slice(2, 6).toUpperCase()
       setRoomCode(code)
@@ -206,17 +204,52 @@ export function ControlView({ streams, setStreams }: { streams: Map<string, Medi
     }
     if (preview.type === 'camera') {
       const camUrl = `${window.location.origin}${window.location.pathname}?role=camera&room=${roomCode}&target=${preview.id}&peer=${peerId}`
+      const isConnected = streams.has(preview.id) || (!!(preview as any).peerId && streams.has((preview as any).peerId))
       return (
         <div className="bg-zinc-900 p-3 rounded space-y-2">
-          <div className="text-sm font-bold">スマホカメラ</div>
-          <div className="flex gap-4 items-center">
-            <div className="bg-white p-2 rounded"><QRCodeSVG value={camUrl} size={120} /></div>
-            <div className="text-xs space-y-1">
-              <div>このQRをスマホで読み取ってください</div>
-              <div className="break-all text-zinc-400">{camUrl}</div>
-              <div className="text-zinc-500">Wi-Fi / モバイルデータ 両対応（TURN経由）</div>
+          <div className="flex justify-between items-center">
+            <div className="text-sm font-bold">スマホカメラ</div>
+            <span className={`text-xs px-2 py-1 rounded ${isConnected ? 'bg-green-700 text-white' : 'bg-zinc-700 text-zinc-300'}`}>{isConnected ? '● 接続済み ✓' : '○ 接続待ち'}</span>
+          </div>
+          <div className="text-xs">PeerID: <span className="font-mono bg-zinc-800 px-1 rounded">{peerId || '(未生成)'}</span> {peerId ? '' : '— ページを再読み込みしてください'}</div>
+          <div className="flex gap-4 items-start">
+            <div className="bg-white p-2 rounded shrink-0">
+              <QRCodeSVG value={camUrl} size={120} />
+            </div>
+            <div className="text-xs space-y-2 min-w-0 flex-1">
+              <div>このQRをスマホで読み取ってください（Chrome推奨）</div>
+              <div className="break-all text-zinc-400 bg-zinc-800 p-1 rounded text-[11px]">{camUrl}</div>
+              <div className="text-zinc-500">同じWi-Fi / モバイルデータ 両対応（TURN経由）。スマホ側で「配信中 ✓」になれば接続成功。</div>
+              {!isConnected && <div className="text-amber-300">ヒント: ①スマホとPCが同じWi-FiでもAP分離で繋がらない場合があります。その場合はスマホをモバイルデータに切替えて試してください ②操作PC側の画面下部が <span className="font-mono">Peer:✓</span> になっているか確認 ③QRを再読取</div>}
+              {isConnected && <div className="text-green-400">接続済み — このカメラをNEXTに入れてTAKEで投影できます。PIPに割り当てることも可能。</div>}
+              <div className="flex gap-2">
+                <button onClick={() => navigator.clipboard.writeText(camUrl)} className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs">
+                  URLコピー
+                </button>
+                <button
+                  onClick={() => {
+                    const newPeer = 'obs-' + Math.random().toString(36).slice(2, 8)
+                    // update store peerId
+                    useAppStore.getState().setPeerId(newPeer)
+                    // force reload peer by reloading page? For now just alert
+                    alert('PeerIDを更新しました: ' + newPeer + ' ページを再読み込みしてください')
+                    window.location.reload()
+                  }}
+                  className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs"
+                >
+                  Peer再生成
+                </button>
+              </div>
             </div>
           </div>
+          {isConnected && (
+            <div className="bg-black rounded overflow-hidden border border-green-800 max-h-40">
+              <div className="text-[11px] text-green-400 p-1">プレビュー（接続中の映像がここに表示されれば成功）</div>
+              <div className="aspect-video">
+                <ProgramView program={preview} streams={streams} isBlack={false} fade={0} />
+              </div>
+            </div>
+          )}
         </div>
       )
     }

@@ -103,49 +103,86 @@ export default function App() {
     sendFullSync()
   }, [JSON.stringify(pips), JSON.stringify(telop), JSON.stringify(lowerThird), JSON.stringify(clock), JSON.stringify(mixer), wsStatus])
 
-  // setup host peer for camera reception
+  // setup host peer for camera reception (use store peerId for consistency)
+  const storePeerId = useAppStore((s) => s.peerId)
+  const [peerError, setPeerError] = useState<string | null>(null)
   useEffect(() => {
     if (isCamera || isOutput) return
-    const peerId = localStorage.getItem('obs-peer-id') || ''
+    if (!hydrated) return
+    const peerId = storePeerId || ''
     if (!peerId) return
-    const peer = new Peer(peerId, {
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        ],
-      },
-    })
-    peer.on('open', () => setPeerReady(true))
-    peer.on('call', async (call) => {
-      // answer without stream, receive only
-      call.answer()
-      call.on('stream', (remoteStream) => {
-        const target = (call.metadata?.target as string) || call.peer
-        // find camera source by id, or first camera source
-        const sources = useAppStore.getState().sources
-        let camId = target
-        if (!sources.find((s) => s.id === camId)) {
-          const cam = sources.find((s) => s.type === 'camera')
-          if (cam) camId = cam.id
-        }
-        setStreams((prev) => {
-          const next = new Map(prev)
-          next.set(camId, remoteStream)
-          return next
-        })
-        // auto-preview if no preview?
-        // store mapping for render
-        // also patch source to remember peer
-        const st = useAppStore.getState()
-        st.updateSource(camId, { peerId: call.peer } as any)
+    console.log('[Peer] creating host peer', peerId)
+    let peer: Peer | null = null
+    let destroyed = false
+    const createPeer = () => {
+      peer = new Peer(peerId, {
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' },
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+          ],
+        },
       })
-    })
-    return () => {
-      peer.destroy()
+      peer.on('open', (id) => {
+        console.log('[Peer] open', id)
+        setPeerReady(true)
+        setPeerError(null)
+      })
+      peer.on('error', (err) => {
+        console.error('[Peer] error', err)
+        setPeerError(err.type + ': ' + (err as any).message)
+        // @ts-ignore peerjs types
+        if (err.type === 'unavailable-id' || err.type === 'peer-unavailable') {
+          // retry with new id? For now just show error
+        }
+      })
+      peer.on('disconnected', () => {
+        console.warn('[Peer] disconnected, reconnecting...')
+        setPeerReady(false)
+        if (!destroyed) peer?.reconnect()
+      })
+      peer.on('close', () => {
+        console.warn('[Peer] closed')
+        setPeerReady(false)
+      })
+      peer.on('call', async (call) => {
+        console.log('[Peer] incoming call from', call.peer, 'metadata', call.metadata)
+        call.answer()
+        call.on('stream', (remoteStream) => {
+          console.log('[Peer] received stream for', call.peer, 'tracks', remoteStream.getTracks().length)
+          const target = (call.metadata?.target as string) || call.peer
+          const sources = useAppStore.getState().sources
+          let camId = target
+          if (!sources.find((s) => s.id === camId)) {
+            const cam = sources.find((s) => s.type === 'camera')
+            if (cam) camId = cam.id
+          }
+          setStreams((prev) => {
+            const next = new Map(prev)
+            next.set(camId, remoteStream)
+            // also store by peer id for fallback lookup
+            next.set(call.peer, remoteStream)
+            return next
+          })
+          const st = useAppStore.getState()
+          st.updateSource(camId, { peerId: call.peer } as any)
+        })
+        call.on('close', () => {
+          console.log('[Peer] call closed', call.peer)
+          // keep stream? remove after disconnect?
+        })
+        call.on('error', (e) => console.error('[Peer] call error', e))
+      })
     }
-  }, [isCamera, isOutput, hydrated])
+    createPeer()
+    return () => {
+      destroyed = true
+      peer?.destroy()
+    }
+  }, [isCamera, isOutput, hydrated, storePeerId])
 
   if (!hydrated) {
     return <div className="min-h-screen bg-black text-white flex items-center justify-center">読み込み中...</div>
@@ -160,8 +197,8 @@ export default function App() {
   return (
     <div>
       <ControlView streams={streams} setStreams={setStreams} />
-      <div className="fixed bottom-2 left-2 text-[10px] bg-zinc-900 text-zinc-500 px-2 py-1 rounded border border-zinc-800">
-        Peer:{peerReady ? '✓' : '…'} WS:{wsStatus} {wsStatus === 'connected' ? '(別PC同期ON)' : wsStatus === 'connecting' ? '(接続中)' : '(ローカル)'}
+      <div className="fixed bottom-2 left-2 text-[10px] bg-zinc-900 text-zinc-500 px-2 py-1 rounded border border-zinc-800 max-w-[80vw] truncate">
+        Peer:{peerReady ? `✓ ${storePeerId?.slice(0, 12)}` : peerError ? `✗ ${peerError}` : '…'} WS:{wsStatus} {wsStatus === 'connected' ? '(別PC同期ON)' : wsStatus === 'connecting' ? '(接続中)' : '(ローカル)'}
       </div>
     </div>
   )
