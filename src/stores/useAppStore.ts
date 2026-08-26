@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Source, MixerState } from '../types/scene'
+import type { Source, MixerState, PipOverlay, TelopState, LowerThirdState, ClockState } from '../types/scene'
 import localforage from 'localforage'
 
 type AppStore = {
@@ -11,6 +11,11 @@ type AppStore = {
   transition: 'cut' | 'fade'
   mixer: MixerState
   roomCode: string | null
+  pips: PipOverlay[]
+  telop: TelopState
+  lowerThird: LowerThirdState
+  clock: ClockState
+  playlistAutoAdvance: boolean
   _hydrated: boolean
 
   // actions
@@ -27,6 +32,14 @@ type AppStore = {
   setFadeDuration: (d: number) => void
   setMixer: (m: Partial<MixerState>) => void
   setRoomCode: (c: string | null) => void
+  setPips: (p: PipOverlay[]) => void
+  addPip: (p: PipOverlay) => void
+  updatePip: (id: string, patch: Partial<PipOverlay>) => void
+  removePip: (id: string) => void
+  setTelop: (t: Partial<TelopState>) => void
+  setLowerThird: (l: Partial<LowerThirdState>) => void
+  setClock: (c: Partial<ClockState>) => void
+  setPlaylistAutoAdvance: (v: boolean) => void
   hydrate: () => Promise<void>
   persist: () => Promise<void>
   exportJson: () => string
@@ -35,6 +48,7 @@ type AppStore = {
 
 const STORAGE_KEY = 'obs-app-state-v2'
 const BLOB_STORE = localforage.createInstance({ name: 'obs-blobs' })
+export const BLOB_STORE_EXPORT = BLOB_STORE
 
 export const useAppStore = create<AppStore>((set, get) => ({
   sources: [
@@ -67,6 +81,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
     muted: false,
   },
   roomCode: null,
+  pips: [],
+  telop: {
+    enabled: false,
+    opacity: 1,
+    scale: 1,
+  },
+  lowerThird: {
+    enabled: false,
+    text: '次の演目',
+    subText: '3年1組 合唱',
+    position: 'bottom',
+    bgOpacity: 0.85,
+    accentColor: '#e11d48',
+  },
+  clock: {
+    enabled: false,
+    mode: 'clock',
+    countdownSec: 300,
+    timerRunning: false,
+    timerSec: 0,
+  },
+  playlistAutoAdvance: false,
   _hydrated: false,
 
   setSources: (sources) => {
@@ -102,7 +138,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       } else {
         set({ programId: previewId, isBlack: false })
       }
-      // broadcast will be handled by sync hook
       get().persist()
     }
   },
@@ -120,22 +155,52 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setFadeDuration: (d) => set({ fadeDuration: d }),
   setMixer: (m) => set((s) => ({ mixer: { ...s.mixer, ...m } })),
   setRoomCode: (c) => set({ roomCode: c }),
+  setPips: (p) => {
+    set({ pips: p })
+    get().persist()
+  },
+  addPip: (p) => {
+    set((s) => ({ pips: [...s.pips, p] }))
+    get().persist()
+  },
+  updatePip: (id, patch) => {
+    set((s) => ({ pips: s.pips.map((p) => (p.id === id ? { ...p, ...patch } : p)) }))
+    get().persist()
+  },
+  removePip: (id) => {
+    set((s) => ({ pips: s.pips.filter((p) => p.id !== id) }))
+    get().persist()
+  },
+  setTelop: (t) => {
+    set((s) => ({ telop: { ...s.telop, ...t } }))
+    get().persist()
+  },
+  setLowerThird: (l) => {
+    set((s) => ({ lowerThird: { ...s.lowerThird, ...l } }))
+    get().persist()
+  },
+  setClock: (c) => {
+    set((s) => ({ clock: { ...s.clock, ...c } }))
+    get().persist()
+  },
+  setPlaylistAutoAdvance: (v) => {
+    set({ playlistAutoAdvance: v })
+    get().persist()
+  },
 
   hydrate: async () => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const parsed = JSON.parse(raw)
-        // Rehydrate blob URLs
         const sources: Source[] = parsed.sources || []
         for (const src of sources) {
-          if ((src.type === 'video' || src.type === 'image' || src.type === 'standby') && (src as any).blobId) {
+          if ((src.type === 'video' || src.type === 'image' || src.type === 'standby' || src.type === 'bgm') && (src as any).blobId) {
             const blob: Blob | null = await BLOB_STORE.getItem((src as any).blobId)
             if (blob) {
               ;(src as any).url = URL.createObjectURL(blob)
             }
           }
-          // slide image elements
           if (src.type === 'slide') {
             for (const slide of (src as any).slides) {
               for (const el of slide.elements) {
@@ -147,6 +212,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
             }
           }
         }
+        // telop image
+        let telop = parsed.telop || get().telop
+        if (telop?.blobId) {
+          const blob: Blob | null = await BLOB_STORE.getItem(telop.blobId)
+          if (blob) telop.imageUrl = URL.createObjectURL(blob)
+        }
         set({
           sources: sources.length ? sources : get().sources,
           previewId: parsed.previewId ?? get().previewId,
@@ -155,6 +226,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
           transition: parsed.transition ?? get().transition,
           mixer: parsed.mixer ?? get().mixer,
           roomCode: parsed.roomCode ?? null,
+          pips: parsed.pips ?? [],
+          telop: telop,
+          lowerThird: parsed.lowerThird ?? get().lowerThird,
+          clock: parsed.clock ?? get().clock,
+          playlistAutoAdvance: parsed.playlistAutoAdvance ?? false,
         })
       }
     } catch (e) {
@@ -164,11 +240,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
   persist: async () => {
-    const { sources, previewId, programId, fadeDuration, transition, mixer, roomCode } = get()
-    // persist blobs separately
+    const { sources, previewId, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
     for (const src of sources) {
-      if ((src.type === 'video' || src.type === 'image' || src.type === 'standby') && (src as any).url?.startsWith('blob:')) {
-        // if blobId not set, fetch blob and store
+      if ((src.type === 'video' || src.type === 'image' || src.type === 'standby' || src.type === 'bgm') && (src as any).url?.startsWith('blob:')) {
         if (!(src as any).blobId) {
           try {
             const res = await fetch((src as any).url)
@@ -180,20 +254,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }
       }
     }
+    // telop blob
+    if (telop.imageUrl?.startsWith('blob:') && !telop.blobId) {
+      try {
+        const res = await fetch(telop.imageUrl)
+        const blob = await res.blob()
+        const blobId = `blob-telop-${Date.now()}`
+        await BLOB_STORE.setItem(blobId, blob)
+        telop.blobId = blobId
+      } catch {}
+    }
     const toSave = {
       sources: sources.map((s) => {
-        // strip blob url to avoid huge string, keep blobId
         const copy: any = { ...s }
-        if (copy.url?.startsWith('blob:')) copy.url = '' // will be rehydrated
+        if (copy.url?.startsWith('blob:')) copy.url = ''
         if (copy.type === 'slide') {
           copy.slides = copy.slides.map((sl: any) => ({
             ...sl,
             elements: sl.elements.map((el: any) => {
               const c: any = { ...el }
-              if (c.url?.startsWith('blob:')) {
-                // store blob if needed
-                c.url = ''
-              }
+              if (c.url?.startsWith('blob:')) c.url = ''
               return c
             }),
           }))
@@ -206,12 +286,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
       transition,
       mixer,
       roomCode,
+      pips,
+      telop: { ...telop, imageUrl: telop.imageUrl?.startsWith('blob:') ? '' : telop.imageUrl },
+      lowerThird,
+      clock,
+      playlistAutoAdvance,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   },
   exportJson: () => {
-    const { sources, previewId, programId, fadeDuration, transition, mixer, roomCode } = get()
-    return JSON.stringify({ sources, previewId, programId, fadeDuration, transition, mixer, roomCode, version: 2 }, null, 2)
+    const { sources, previewId, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
+    return JSON.stringify({ sources, previewId, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance, version: 3 }, null, 2)
   },
   importJson: (json) => {
     try {
@@ -225,6 +310,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
           transition: parsed.transition ?? 'fade',
           mixer: parsed.mixer,
           roomCode: parsed.roomCode ?? null,
+          pips: parsed.pips ?? [],
+          telop: parsed.telop ?? get().telop,
+          lowerThird: parsed.lowerThird ?? get().lowerThird,
+          clock: parsed.clock ?? get().clock,
+          playlistAutoAdvance: parsed.playlistAutoAdvance ?? false,
         })
         get().persist()
       }

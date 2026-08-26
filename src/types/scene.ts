@@ -1,4 +1,4 @@
-export type SourceType = 'video' | 'image' | 'slide' | 'camera' | 'screen' | 'standby' | 'black'
+export type SourceType = 'video' | 'image' | 'slide' | 'camera' | 'screen' | 'standby' | 'black' | 'bgm'
 
 export type BaseSource = {
   id: string
@@ -83,6 +83,57 @@ export type BlackSource = BaseSource & {
   type: 'black'
 }
 
+export type BgmSource = BaseSource & {
+  type: 'bgm'
+  url: string
+  fileName: string
+  loop: boolean
+  volume: number
+  blobId?: string
+}
+
+export type PipShape = 'rect' | 'circle' | 'rounded'
+
+export type PipOverlay = {
+  id: string
+  sourceId: string // refers to Source.id
+  enabled: boolean
+  x: number // 0-100 %
+  y: number
+  width: number
+  height: number
+  rotation: number // deg
+  opacity: number // 0-1
+  shape: PipShape
+  borderRadius: number // 0-50 %
+  zIndex: number
+}
+
+export type TelopState = {
+  enabled: boolean
+  imageUrl?: string
+  blobId?: string
+  opacity: number // 0-1
+  scale: number // 0.5-1.5
+}
+
+export type LowerThirdState = {
+  enabled: boolean
+  text: string
+  subText: string
+  position: 'bottom' | 'top'
+  bgOpacity: number
+  accentColor: string
+}
+
+export type ClockState = {
+  enabled: boolean
+  mode: 'clock' | 'timer' | 'countdown'
+  countdownSec: number // for countdown
+  timerRunning: boolean
+  timerSec: number
+}
+
 export type Source =
   | VideoSource
   | ImageSource
@@ -91,6 +142,7 @@ export type Source =
   | ScreenSource
   | StandbySource
   | BlackSource
+  | BgmSource
 
 export type MixerState = {
   masterVolume: number
@@ -108,4 +160,9 @@ export type AppState = {
   fadeDuration: number
   mixer: MixerState
   roomCode: string | null
+  pips: PipOverlay[]
+  telop: TelopState
+  lowerThird: LowerThirdState
+  clock: ClockState
+  playlistAutoAdvance: boolean
 }

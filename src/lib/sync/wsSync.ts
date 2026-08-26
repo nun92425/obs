@@ -61,6 +61,12 @@ export function useWsSync(enabled: boolean, roomCode: string | null) {
             isBlack: p.isBlack ?? false,
             fadeDuration: p.fadeDuration,
             transition: p.transition,
+            mixer: p.mixer ?? useAppStore.getState().mixer,
+            pips: p.pips ?? [],
+            telop: p.telop ?? useAppStore.getState().telop,
+            lowerThird: p.lowerThird ?? useAppStore.getState().lowerThird,
+            clock: p.clock ?? useAppStore.getState().clock,
+            playlistAutoAdvance: p.playlistAutoAdvance ?? false,
           })
         } else if (msg.type === 'REQUEST_SYNC') {
           const state = useAppStore.getState()
@@ -81,6 +87,13 @@ export function useWsSync(enabled: boolean, roomCode: string | null) {
       wsRef.current.send(JSON.stringify({ type: 'PROGRAM', payload: { programId, isBlack, previewId } }))
     }
   }
+  const sendFullSync = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const payload = JSON.parse(useAppStore.getState().exportJson())
+      payload.isBlack = useAppStore.getState().isBlack
+      wsRef.current.send(JSON.stringify({ type: 'FULL_SYNC', payload }))
+    }
+  }
 
-  return { status, sendProgram }
+  return { status, sendProgram, sendFullSync }
 }

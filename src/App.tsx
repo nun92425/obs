@@ -20,17 +20,39 @@ function OutputPage({ streams }: { streams: Map<string, MediaStream> }) {
     else document.exitFullscreen()
   }
 
+  // 全画面時はUIを自動で隠す（マウス停止2秒で非表示）
+  const [showUi, setShowUi] = useState(true)
+  useEffect(() => {
+    let t: number | undefined
+    const onMove = () => {
+      setShowUi(true)
+      window.clearTimeout(t)
+      t = window.setTimeout(() => {
+        if (document.fullscreenElement) setShowUi(false)
+      }, 2000)
+    }
+    window.addEventListener('mousemove', onMove)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.clearTimeout(t)
+    }
+  }, [])
+
   return (
-    <div className="w-screen h-screen bg-black flex flex-col">
-      <div className="flex-1 relative">
+    <div className="w-screen h-screen bg-black flex flex-col cursor-none has-[button:hover]:cursor-auto" onClick={toggleFullscreen}>
+      <div className="flex-1 relative overflow-hidden">
         <ProgramView program={program} streams={streams} isBlack={isBlack} fade={transition === 'fade' ? fadeDuration : 0} />
-        <button
-          onClick={toggleFullscreen}
-          className="absolute bottom-4 right-4 px-3 py-1 bg-black/60 hover:bg-black/80 text-white rounded text-xs border border-white/20"
-        >
-          全画面切替
-        </button>
-        <div className="absolute top-2 left-2 text-[10px] bg-black/60 text-white/60 px-2 py-1 rounded">OUTPUT — Room {useAppStore.getState().roomCode}</div>
+        {showUi && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleFullscreen()
+            }}
+            className="absolute bottom-4 right-4 px-3 py-1 bg-black/40 hover:bg-black/70 text-white/70 hover:text-white rounded text-xs border border-white/10 backdrop-blur"
+          >
+            {document.fullscreenElement ? '全画面解除' : '全画面'}
+          </button>
+        )}
       </div>
     </div>
   )
@@ -53,7 +75,12 @@ export default function App() {
   // sync hooks
   useBroadcastSync()
   const wsEnabled = !!roomCode && !isCamera
-  const { status: wsStatus, sendProgram } = useWsSync(wsEnabled, roomCode)
+  const { status: wsStatus, sendProgram, sendFullSync } = useWsSync(wsEnabled, roomCode)
+  const pips = useAppStore((s) => s.pips)
+  const telop = useAppStore((s) => s.telop)
+  const lowerThird = useAppStore((s) => s.lowerThird)
+  const clock = useAppStore((s) => s.clock)
+  const mixer = useAppStore((s) => s.mixer)
 
   // hydrate
   useEffect(() => {
@@ -66,6 +93,13 @@ export default function App() {
     if (wsStatus !== 'connected') return
     sendProgram(programId, isBlack, previewId)
   }, [programId, isBlack, previewId, wsStatus, isOutput, isCamera])
+
+  // broadcast full sync when overlays change (for remote output)
+  useEffect(() => {
+    if (isOutput || isCamera) return
+    if (wsStatus !== 'connected') return
+    sendFullSync()
+  }, [JSON.stringify(pips), JSON.stringify(telop), JSON.stringify(lowerThird), JSON.stringify(clock), JSON.stringify(mixer), wsStatus])
 
   // setup host peer for camera reception
   useEffect(() => {
