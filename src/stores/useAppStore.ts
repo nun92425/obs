@@ -4,7 +4,9 @@ import localforage from 'localforage'
 
 type AppStore = {
   sources: Source[]
-  previewId: string | null
+  previewId: string | null // legacy
+  previewIds: (string | null)[]
+  activePreviewIndex: number
   programId: string | null
   isBlack: boolean
   fadeDuration: number // ms
@@ -23,10 +25,14 @@ type AppStore = {
   addSource: (s: Source) => void
   updateSource: (id: string, patch: Partial<Source>) => void
   removeSource: (id: string) => void
-  setPreview: (id: string | null) => void
+  setPreview: (id: string | null, index?: number) => void
+  setActivePreview: (index: number) => void
+  clearPreview: (index: number) => void
+  addToNext: (id: string) => void
   setProgram: (id: string | null) => void
-  take: () => void
-  cut: () => void
+  take: (index?: number) => void
+  cut: (index?: number) => void
+  takeActive: () => void
   setBlack: (v: boolean) => void
   setTransition: (t: 'cut' | 'fade') => void
   setFadeDuration: (d: number) => void
@@ -69,6 +75,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } as Source,
   ],
   previewId: 'standby-1',
+  previewIds: ['standby-1', null, null],
+  activePreviewIndex: 0,
   programId: 'standby-1',
   isBlack: false,
   fadeDuration: 300,
@@ -123,33 +131,72 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       sources: state.sources.filter((s) => s.id !== id),
       previewId: state.previewId === id ? null : state.previewId,
+      previewIds: state.previewIds.map((v) => (v === id ? null : v)),
       programId: state.programId === id ? null : state.programId,
     }))
     get().persist()
   },
-  setPreview: (id) => set({ previewId: id }),
+  setPreview: (id, index) => {
+    const idx = index ?? get().activePreviewIndex
+    set((state) => {
+      const next = [...state.previewIds] as (string | null)[]
+      // ensure length 3
+      while (next.length < 3) next.push(null)
+      next[idx] = id
+      return { previewIds: next, previewId: id, activePreviewIndex: idx }
+    })
+    get().persist()
+  },
+  setActivePreview: (index) => set({ activePreviewIndex: Math.max(0, Math.min(2, index)) }),
+  clearPreview: (index) => {
+    set((state) => {
+      const next = [...state.previewIds]
+      next[index] = null
+      const activeId = next[state.activePreviewIndex] ?? null
+      return { previewIds: next, previewId: activeId }
+    })
+    get().persist()
+  },
+  addToNext: (id) => {
+    const { previewIds, activePreviewIndex } = get()
+    // find first empty, else overwrite active
+    let target = previewIds.findIndex((v) => v === null)
+    if (target === -1) target = activePreviewIndex
+    get().setPreview(id, target)
+  },
   setProgram: (id) => set({ programId: id, isBlack: false }),
-  take: () => {
-    const { previewId } = get()
-    if (previewId) {
-      const src = get().sources.find((s) => s.id === previewId)
-      if (src?.type === 'black') {
-        set({ isBlack: true })
-      } else {
-        set({ programId: previewId, isBlack: false })
-      }
-      get().persist()
-    }
-  },
-  cut: () => {
-    const { previewId } = get()
-    if (previewId) {
-      const src = get().sources.find((s) => s.id === previewId)
+  take: (index) => {
+    const idx = index ?? get().activePreviewIndex
+    const previewIds = get().previewIds
+    const takeId = previewIds[idx]
+    if (takeId) {
+      const src = get().sources.find((s) => s.id === takeId)
       if (src?.type === 'black') set({ isBlack: true })
-      else set({ programId: previewId, isBlack: false })
+      else set({ programId: takeId, isBlack: false })
+      // queue shift: remove taken and shift remaining forward if we want queue behavior
+      // For now, clear the taken slot and shift left to keep queue compact
+      set((state) => {
+        const next = [...state.previewIds]
+        // remove taken element and push null to end to maintain 3 slots (queue shift)
+        next.splice(idx, 1)
+        next.push(null)
+        const activeId = next[state.activePreviewIndex] ?? next.find((v) => v !== null) ?? null
+        // if active index now points to null, find next non-null
+        let newActive = state.activePreviewIndex
+        if (next[newActive] === null) {
+          const firstNonNull = next.findIndex((v) => v !== null)
+          newActive = firstNonNull >= 0 ? firstNonNull : 0
+        }
+        return { previewIds: next, previewId: activeId, activePreviewIndex: newActive }
+      })
       get().persist()
     }
   },
+  cut: (index) => {
+    // cut is same as take but without fade handling (fade handled in view)
+    get().take(index)
+  },
+  takeActive: () => get().take(),
   setBlack: (v) => set({ isBlack: v }),
   setTransition: (t) => set({ transition: t }),
   setFadeDuration: (d) => set({ fadeDuration: d }),
@@ -218,9 +265,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
           const blob: Blob | null = await BLOB_STORE.getItem(telop.blobId)
           if (blob) telop.imageUrl = URL.createObjectURL(blob)
         }
+        // migrate previewId -> previewIds
+        let previewIds: (string | null)[] = parsed.previewIds
+        let activePreviewIndex: number = parsed.activePreviewIndex ?? 0
+        if (!previewIds) {
+          if (parsed.previewId) previewIds = [parsed.previewId, null, null]
+          else if (parsed.previewIds === undefined) previewIds = [get().previewIds[0] ?? 'standby-1', null, null]
+        }
+        // ensure length 3
+        while (previewIds.length < 3) previewIds.push(null)
+        previewIds = previewIds.slice(0, 3)
+        const previewId = previewIds[activePreviewIndex] ?? previewIds.find((v) => v !== null) ?? null
         set({
           sources: sources.length ? sources : get().sources,
-          previewId: parsed.previewId ?? get().previewId,
+          previewId,
+          previewIds,
+          activePreviewIndex,
           programId: parsed.programId ?? get().programId,
           fadeDuration: parsed.fadeDuration ?? get().fadeDuration,
           transition: parsed.transition ?? get().transition,
@@ -240,7 +300,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
   persist: async () => {
-    const { sources, previewId, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
+    const { sources, previewId, previewIds, activePreviewIndex, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
     for (const src of sources) {
       if ((src.type === 'video' || src.type === 'image' || src.type === 'standby' || src.type === 'bgm') && (src as any).url?.startsWith('blob:')) {
         if (!(src as any).blobId) {
@@ -281,6 +341,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return copy
       }),
       previewId,
+      previewIds,
+      activePreviewIndex,
       programId,
       fadeDuration,
       transition,
@@ -295,16 +357,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   },
   exportJson: () => {
-    const { sources, previewId, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
-    return JSON.stringify({ sources, previewId, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance, version: 3 }, null, 2)
+    const { sources, previewId, previewIds, activePreviewIndex, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance } = get()
+    return JSON.stringify({ sources, previewId, previewIds, activePreviewIndex, programId, fadeDuration, transition, mixer, roomCode, pips, telop, lowerThird, clock, playlistAutoAdvance, version: 4 }, null, 2)
   },
   importJson: (json) => {
     try {
       const parsed = JSON.parse(json)
       if (parsed.sources) {
+        let previewIds: (string | null)[] = parsed.previewIds
+        let activePreviewIndex: number = parsed.activePreviewIndex ?? 0
+        if (!previewIds && parsed.previewId) previewIds = [parsed.previewId, null, null]
+        if (previewIds) {
+          while (previewIds.length < 3) previewIds.push(null)
+          previewIds = previewIds.slice(0, 3)
+        } else {
+          previewIds = get().previewIds
+        }
+        const previewId = previewIds[activePreviewIndex] ?? previewIds.find((v) => v !== null) ?? parsed.previewId ?? null
         set({
           sources: parsed.sources,
-          previewId: parsed.previewId,
+          previewId,
+          previewIds,
+          activePreviewIndex,
           programId: parsed.programId,
           fadeDuration: parsed.fadeDuration ?? 300,
           transition: parsed.transition ?? 'fade',

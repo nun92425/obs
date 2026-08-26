@@ -4,13 +4,15 @@ import { useAppStore } from '../../stores/useAppStore'
 const CHANNEL_NAME = 'obs-sync-v2'
 
 type SyncMessage =
-  | { type: 'PROGRAM'; programId: string | null; isBlack: boolean; previewId: string | null }
+  | { type: 'PROGRAM'; programId: string | null; isBlack: boolean; previewId: string | null; previewIds?: (string | null)[]; activePreviewIndex?: number }
   | { type: 'REQUEST_SYNC' }
   | { type: 'FULL_SYNC'; payload: any }
 
 export function useBroadcastSync() {
   const programId = useAppStore((s) => s.programId)
   const previewId = useAppStore((s) => s.previewId)
+  const previewIds = useAppStore((s) => s.previewIds)
+  const activePreviewIndex = useAppStore((s) => s.activePreviewIndex)
   const isBlack = useAppStore((s) => s.isBlack)
   const pips = useAppStore((s) => s.pips)
   const telop = useAppStore((s) => s.telop)
@@ -27,9 +29,10 @@ export function useBroadcastSync() {
       const msg = ev.data
       if (msg.type === 'PROGRAM') {
         const cur = useAppStore.getState()
-        if (cur.programId !== msg.programId || cur.isBlack !== msg.isBlack || cur.previewId !== msg.previewId) {
-          cur.setPreview(msg.previewId)
-          useAppStore.setState({ programId: msg.programId, isBlack: msg.isBlack, previewId: msg.previewId })
+        const nextPreviewIds = (msg as any).previewIds ?? (msg.previewId !== undefined ? [msg.previewId, null, null] : cur.previewIds)
+        const nextActive = (msg as any).activePreviewIndex ?? 0
+        if (cur.programId !== msg.programId || cur.isBlack !== msg.isBlack || JSON.stringify(cur.previewIds) !== JSON.stringify(nextPreviewIds) || cur.activePreviewIndex !== nextActive) {
+          useAppStore.setState({ programId: msg.programId, isBlack: msg.isBlack, previewId: msg.previewId, previewIds: nextPreviewIds, activePreviewIndex: nextActive } as any)
         }
       } else if (msg.type === 'REQUEST_SYNC') {
         const full = useAppStore.getState().exportJson()
@@ -38,10 +41,13 @@ export function useBroadcastSync() {
         ch.postMessage({ type: 'FULL_SYNC', payload } as SyncMessage)
       } else if (msg.type === 'FULL_SYNC') {
         const p = msg.payload
+        const previewIds = p.previewIds ?? (p.previewId ? [p.previewId, null, null] : undefined)
         useAppStore.setState({
           sources: p.sources,
           programId: p.programId,
           previewId: p.previewId,
+          previewIds: previewIds ?? useAppStore.getState().previewIds,
+          activePreviewIndex: p.activePreviewIndex ?? 0,
           isBlack: p.isBlack ?? false,
           fadeDuration: p.fadeDuration,
           transition: p.transition,
@@ -51,7 +57,7 @@ export function useBroadcastSync() {
           lowerThird: p.lowerThird,
           clock: p.clock,
           playlistAutoAdvance: p.playlistAutoAdvance,
-        })
+        } as any)
       }
     }
 
@@ -68,8 +74,8 @@ export function useBroadcastSync() {
     if (!channelRef.current) return
     const isOutput = new URLSearchParams(window.location.search).has('output')
     if (isOutput) return
-    channelRef.current.postMessage({ type: 'PROGRAM', programId, isBlack, previewId } as SyncMessage)
-  }, [programId, isBlack, previewId])
+    channelRef.current.postMessage({ type: 'PROGRAM', programId, isBlack, previewId, previewIds, activePreviewIndex } as SyncMessage)
+  }, [programId, isBlack, previewId, JSON.stringify(previewIds), activePreviewIndex])
 
   // broadcast full sync when overlays/extra state change (control only)
   useEffect(() => {

@@ -63,6 +63,8 @@ export default function App() {
   const hydrate = useAppStore((s) => s.hydrate)
   const programId = useAppStore((s) => s.programId)
   const previewId = useAppStore((s) => s.previewId)
+  const previewIds = useAppStore((s) => s.previewIds)
+  const activePreviewIndex = useAppStore((s) => s.activePreviewIndex)
   const isBlack = useAppStore((s) => s.isBlack)
   const roomCode = useAppStore((s) => s.roomCode)
   const [streams, setStreams] = useState<Map<string, MediaStream>>(new Map())
@@ -91,8 +93,8 @@ export default function App() {
   useEffect(() => {
     if (isOutput || isCamera) return
     if (wsStatus !== 'connected') return
-    sendProgram(programId, isBlack, previewId)
-  }, [programId, isBlack, previewId, wsStatus, isOutput, isCamera])
+    sendProgram(programId, isBlack, previewId, previewIds, activePreviewIndex)
+  }, [programId, isBlack, previewId, JSON.stringify(previewIds), activePreviewIndex, wsStatus, isOutput, isCamera])
 
   // broadcast full sync when overlays change (for remote output)
   useEffect(() => {

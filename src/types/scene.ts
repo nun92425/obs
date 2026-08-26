@@ -154,7 +154,9 @@ export type MixerState = {
 
 export type AppState = {
   sources: Source[]
-  previewId: string | null
+  previewId: string | null // legacy, kept for migration
+  previewIds: (string | null)[]
+  activePreviewIndex: number // 0-2
   programId: string | null
   isBlack: boolean
   fadeDuration: number

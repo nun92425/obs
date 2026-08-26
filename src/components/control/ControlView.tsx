@@ -15,7 +15,9 @@ import { HelpModal } from './HelpModal'
 
 export function ControlView({ streams, setStreams }: { streams: Map<string, MediaStream>; setStreams: React.Dispatch<React.SetStateAction<Map<string, MediaStream>>> }) {
   const sources = useAppStore((s) => s.sources)
-  const previewId = useAppStore((s) => s.previewId)
+  const previewIds = useAppStore((s) => s.previewIds)
+  const activePreviewIndex = useAppStore((s) => s.activePreviewIndex)
+  const previewId = previewIds[activePreviewIndex] ?? null
   const programId = useAppStore((s) => s.programId)
   const isBlack = useAppStore((s) => s.isBlack)
   const fadeDuration = useAppStore((s) => s.fadeDuration)
@@ -24,6 +26,8 @@ export function ControlView({ streams, setStreams }: { streams: Map<string, Medi
   const cut = useAppStore((s) => s.cut)
   const setBlack = useAppStore((s) => s.setBlack)
   const setPreview = useAppStore((s) => s.setPreview)
+  const setActivePreview = useAppStore((s) => s.setActivePreview)
+  const clearPreview = useAppStore((s) => s.clearPreview)
   const updateSource = useAppStore((s) => s.updateSource)
   const setFadeDuration = useAppStore((s) => s.setFadeDuration)
   const setTransition = useAppStore((s) => s.setTransition)
@@ -87,17 +91,24 @@ export function ControlView({ streams, setStreams }: { streams: Map<string, Medi
         handleTake()
       } else if (e.key.toLowerCase() === 'b') {
         setBlack(!isBlack)
-      } else if (e.key >= '1' && e.key <= '9') {
+      } else if (e.key >= '1' && e.key <= '3' && !e.ctrlKey && !e.altKey) {
+        // 1-3: NEXT選択
+        const idx = parseInt(e.key) - 1
+        setActivePreview(idx)
+      } else if (e.key >= '4' && e.key <= '9') {
         const idx = parseInt(e.key) - 1
         const src = sources[idx]
         if (src) setPreview(src.id)
+      } else if (e.key.toLowerCase() === 'q' || e.key.toLowerCase() === 'w' || e.key.toLowerCase() === 'e') {
+        const map: Record<string, number> = { q: 0, w: 1, e: 2 }
+        setActivePreview(map[e.key.toLowerCase()])
       } else if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
         setHelpOpen((v) => !v)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sources, isBlack, transition, previewId])
+  }, [sources, isBlack, transition, previewId, activePreviewIndex])
 
   const exportJson = () => {
     const json = useAppStore.getState().exportJson()
@@ -231,21 +242,56 @@ export function ControlView({ streams, setStreams }: { streams: Map<string, Medi
       </header>
 
       <div className="p-3 space-y-3 flex-1">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <div className="text-xs font-bold text-yellow-400">PREVIEW (NEXT)</div>
-            <div className="aspect-video bg-black rounded overflow-hidden border border-yellow-600">
-              <ProgramView program={preview} streams={streams} isBlack={false} fade={0} />
-            </div>
-            {preview && <div className="text-xs text-zinc-400 truncate">{preview.name} / {preview.type}</div>}
+        {/* 3 NEXT previews */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {previewIds.map((pid, idx) => {
+            const p = sources.find((s) => s.id === pid) || null
+            const isActive = idx === activePreviewIndex
+            return (
+              <div key={idx} className="space-y-1">
+                <div className={`text-xs font-bold flex justify-between items-center ${isActive ? 'text-yellow-300' : 'text-zinc-500'}`}>
+                  <span>
+                    NEXT{idx + 1} {isActive ? '★' : ''} {isActive && '(選択中)'}
+                  </span>
+                  <span className="flex gap-1">
+                    <button
+                      onClick={() => setActivePreview(idx)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] ${isActive ? 'bg-yellow-400 text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                    >
+                      選択
+                    </button>
+                    {p && (
+                      <button
+                        onClick={() => take(idx)}
+                        className="px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-[10px]"
+                      >
+                        TAKE
+                      </button>
+                    )}
+                    <button onClick={() => clearPreview(idx)} className="px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">
+                      クリア
+                    </button>
+                  </span>
+                </div>
+                <div
+                  onClick={() => setActivePreview(idx)}
+                  className={`aspect-video bg-black rounded overflow-hidden cursor-pointer border-2 ${isActive ? 'border-yellow-400 ring-2 ring-yellow-400/30' : p ? 'border-zinc-600' : 'border-dashed border-zinc-700'}`}
+                >
+                  {p ? <ProgramView program={p} streams={streams} isBlack={false} fade={0} /> : <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">空 — ソースをクリックで追加</div>}
+                </div>
+                {p ? <div className="text-xs text-zinc-400 truncate">{p.name} / {p.type}</div> : <div className="text-xs text-zinc-600">未選択</div>}
+              </div>
+            )
+          })}
+        </div>
+        <div className="text-[11px] text-zinc-500 text-center">NEXTは3枠。ソースをクリックで空き枠に追加、NEXT枠をクリックで選択（★）、Spaceは選択中のNEXTをTAKE。1/2/3 or Q/W/Eで選択切替</div>
+        {/* PROGRAM */}
+        <div className="space-y-1">
+          <div className="text-xs font-bold text-red-400">PROGRAM (LIVE) {isBlack && '(BLACK)'}</div>
+          <div className="aspect-video bg-black rounded overflow-hidden border-2 border-red-600 max-h-[50vh]">
+            <ProgramView program={program} streams={streams} isBlack={isBlack} fade={transition === 'fade' ? fadeDuration : 0} />
           </div>
-          <div className="space-y-1">
-            <div className="text-xs font-bold text-red-400">PROGRAM (LIVE) {isBlack && '(BLACK)'}</div>
-            <div className="aspect-video bg-black rounded overflow-hidden border border-red-600">
-              <ProgramView program={program} streams={streams} isBlack={isBlack} fade={transition === 'fade' ? fadeDuration : 0} />
-            </div>
-            {program && <div className="text-xs text-zinc-400 truncate">{program.name} / {program.type}</div>}
-          </div>
+          {program && <div className="text-xs text-zinc-400 truncate">{program.name} / {program.type}</div>}
         </div>
 
         <div className="flex flex-wrap gap-2 items-center bg-zinc-900 p-3 rounded">

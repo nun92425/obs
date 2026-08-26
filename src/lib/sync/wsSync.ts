@@ -50,14 +50,19 @@ export function useWsSync(enabled: boolean, roomCode: string | null) {
       try {
         const msg: WsMessage = JSON.parse(ev.data)
         if (msg.type === 'PROGRAM') {
-          const { programId, isBlack, previewId } = msg.payload
-          useAppStore.setState({ programId, isBlack, previewId })
+          const { programId, isBlack, previewId, previewIds, activePreviewIndex } = msg.payload
+          const cur = useAppStore.getState()
+          const nextIds = previewIds ?? (previewId !== undefined ? [previewId, null, null] : cur.previewIds)
+          useAppStore.setState({ programId, isBlack, previewId, previewIds: nextIds, activePreviewIndex: activePreviewIndex ?? 0 } as any)
         } else if (msg.type === 'FULL_SYNC') {
           const p = msg.payload
+          const previewIds = p.previewIds ?? (p.previewId ? [p.previewId, null, null] : undefined)
           useAppStore.setState({
             sources: p.sources,
             programId: p.programId,
             previewId: p.previewId,
+            previewIds: previewIds ?? useAppStore.getState().previewIds,
+            activePreviewIndex: p.activePreviewIndex ?? 0,
             isBlack: p.isBlack ?? false,
             fadeDuration: p.fadeDuration,
             transition: p.transition,
@@ -67,7 +72,7 @@ export function useWsSync(enabled: boolean, roomCode: string | null) {
             lowerThird: p.lowerThird ?? useAppStore.getState().lowerThird,
             clock: p.clock ?? useAppStore.getState().clock,
             playlistAutoAdvance: p.playlistAutoAdvance ?? false,
-          })
+          } as any)
         } else if (msg.type === 'REQUEST_SYNC') {
           const state = useAppStore.getState()
           ws.send(JSON.stringify({ type: 'FULL_SYNC', payload: JSON.parse(state.exportJson()) }))
@@ -82,9 +87,9 @@ export function useWsSync(enabled: boolean, roomCode: string | null) {
     }
   }, [enabled, roomCode])
 
-  const sendProgram = (programId: string | null, isBlack: boolean, previewId: string | null) => {
+  const sendProgram = (programId: string | null, isBlack: boolean, previewId: string | null, previewIds?: (string | null)[], activePreviewIndex?: number) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'PROGRAM', payload: { programId, isBlack, previewId } }))
+      wsRef.current.send(JSON.stringify({ type: 'PROGRAM', payload: { programId, isBlack, previewId, previewIds, activePreviewIndex } }))
     }
   }
   const sendFullSync = () => {

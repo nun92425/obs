@@ -4,10 +4,12 @@ import { v4 as uuid } from 'uuid'
 
 export function SourceDeck() {
   const sources = useAppStore((s) => s.sources)
-  const previewId = useAppStore((s) => s.previewId)
+  const previewIds = useAppStore((s) => s.previewIds)
+  const activePreviewIndex = useAppStore((s) => s.activePreviewIndex)
   const programId = useAppStore((s) => s.programId)
   const addSource = useAppStore((s) => s.addSource)
-  const setPreview = useAppStore((s) => s.setPreview)
+  const addToNext = useAppStore((s) => s.addToNext)
+  const setActivePreview = useAppStore((s) => s.setActivePreview)
   const removeSource = useAppStore((s) => s.removeSource)
   const setSources = useAppStore((s) => s.setSources)
   const playlistAutoAdvance = useAppStore((s) => s.playlistAutoAdvance)
@@ -141,7 +143,9 @@ export function SourceDeck() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
         {sources.map((src, idx) => {
-          const isPreview = src.id === previewId
+          const previewIndex = previewIds.indexOf(src.id)
+          const isPreview = previewIndex >= 0
+          const isActive = previewIndex === activePreviewIndex
           const isProgram = src.id === programId
           return (
             <div
@@ -150,14 +154,17 @@ export function SourceDeck() {
               onDragStart={() => onDragStart(idx)}
               onDragOver={(e) => onDragOver(e, idx)}
               onDragEnd={onDragEnd}
-              onClick={() => setPreview(src.id)}
+              onClick={() => {
+                if (isPreview) setActivePreview(previewIndex)
+                else addToNext(src.id)
+              }}
               className={`relative group rounded overflow-hidden border-2 cursor-pointer bg-zinc-900 aspect-video flex flex-col items-center justify-center p-2 text-center select-none
-                ${isProgram ? 'border-red-500' : isPreview ? 'border-yellow-400' : 'border-zinc-700 hover:border-zinc-500'} ${dragIdx === idx ? 'opacity-50' : ''}`}
-              title="ドラッグで並べ替え"
+                ${isProgram ? 'border-red-500' : isActive ? 'border-yellow-400 ring-2 ring-yellow-400/50' : isPreview ? 'border-yellow-600' : 'border-zinc-700 hover:border-zinc-500'} ${dragIdx === idx ? 'opacity-50' : ''}`}
+              title={isPreview ? `NEXT${previewIndex + 1} (クリックで選択)` : 'クリックでNEXTキューに追加'}
             >
               <div className="absolute top-1 left-1 flex gap-1">
                 {isProgram && <span className="text-[10px] bg-red-600 text-white px-1 rounded">LIVE</span>}
-                {isPreview && <span className="text-[10px] bg-yellow-500 text-black px-1 rounded">NEXT</span>}
+                {isPreview && <span className={`text-[10px] px-1 rounded ${isActive ? 'bg-yellow-400 text-black' : 'bg-yellow-700 text-white'}`}>NEXT{previewIndex + 1}{isActive ? '★' : ''}</span>}
               </div>
               <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100">
                 <button
