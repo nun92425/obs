@@ -124,7 +124,12 @@ function CameraOutput({ src, streams }: { src: any; streams: Map<string, MediaSt
     }
   }, [stream])
   if (!stream) return <div className="w-full h-full bg-black flex items-center justify-center text-white/60">カメラ待機中... ({src.name})</div>
-  return <video ref={ref} autoPlay playsInline className="w-full h-full object-contain bg-black" />
+  // 常に16:9 HDで横向き表示（PCと同じ比率）。縦持ちの場合は中央をクロップして横に合わせる
+  return (
+    <div className="w-full h-full bg-black flex items-center justify-center overflow-hidden">
+      <video ref={ref} autoPlay playsInline className="w-full h-full object-cover" style={{ aspectRatio: '16/9' }} />
+    </div>
+  )
 }
 
 function ScreenOutput({ src }: { src: any }) {

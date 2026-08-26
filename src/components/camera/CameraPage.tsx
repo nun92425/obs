@@ -52,7 +52,12 @@ export function CameraPage() {
       cleanup()
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          facingMode: mode,
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          aspectRatio: { ideal: 1.7777777778 },
+        },
         audio: true,
       })
       streamRef.current = stream
@@ -217,9 +222,12 @@ export function CameraPage() {
           </button>
         </div>
       </header>
-      <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
-        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-contain" />
-        <div className="absolute inset-0 pointer-events-none border-4 border-white/0" />
+      <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden p-2">
+        <div className="relative w-full max-w-[960px] aspect-video bg-zinc-900 rounded overflow-hidden shadow-lg border border-zinc-700">
+          <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" style={{ aspectRatio: '16/9' }} />
+          <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded backdrop-blur">16:9 HD — 横向きで持ってください ↔</div>
+          <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[11px] px-2 py-1 rounded">PCと同じ比率で出力されます</div>
+        </div>
       </div>
       <div className="p-3 bg-zinc-900 space-y-2">
         <div className={`text-center px-3 py-2 rounded font-medium text-sm ${status.includes('配信中') ? 'bg-green-700' : status.includes('エラー') || status.includes('拒否') || status.includes('HTTPS') ? 'bg-red-800' : 'bg-zinc-800'}`}>{status}</div>
