@@ -9,3 +9,14 @@ services:
     envVars:
       - key: PORT
         value: 10000
+  - type: web
+    name: obs
+    env: static
+    plan: free
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_SIGNALING_URL
+        value: wss://obs-signaling.onrender.com
+      - key: NODE_VERSION
+        value: 20.18.1

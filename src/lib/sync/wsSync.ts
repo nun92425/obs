@@ -19,14 +19,15 @@ export function useWsSync(enabled: boolean, roomCode: string | null) {
     if (envUrl) {
       url = `${envUrl.replace(/\/$/, '')}/?room=${roomCode}`
     } else {
-      // fallback to localhost dev or render
       const host = window.location.hostname
-      // if localhost, connect to localhost:3001
       if (host === 'localhost' || host === '127.0.0.1') {
         url = `ws://localhost:3001?room=${roomCode}`
+      } else if (host === 'obs-signaling.onrender.com') {
+        url = `${proto}://${host}?room=${roomCode}`
       } else {
-        // assume signaling at same origin + /ws? (will be Render URL configured)
-        url = `${proto}://${host}/ws?room=${roomCode}`
+        // Render 静的サイト (obs-pfq1.onrender.com) からは本番シグナリングに接続
+        // 環境変数未設定でも動くようにフォールバック
+        url = `wss://obs-signaling.onrender.com?room=${roomCode}`
       }
     }
 
