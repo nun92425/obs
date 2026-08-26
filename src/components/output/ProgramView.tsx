@@ -88,17 +88,26 @@ function SlideOutput({ src }: { src: any }) {
 }
 
 function StandbyOutput({ src }: { src: any }) {
+  const hasText = !!(src.text?.trim() || src.subText?.trim())
+  const overlayOpacity = src.overlayOpacity ?? 0.35
+  const enableOverlay = src.enableOverlay ?? true
+  const showOverlay = hasText && enableOverlay && overlayOpacity > 0
   return (
     <div className="w-full h-full bg-black relative flex items-center justify-center overflow-hidden">
       {src.url ? (
-        <video src={src.url} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-60" />
+        <>
+          <video src={src.url} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
+          {showOverlay && <div className="absolute inset-0 bg-black" style={{ opacity: overlayOpacity }} />}
+        </>
       ) : (
         <div className="absolute inset-0" style={{ background: src.bgColor || '#0f172a' }} />
       )}
-      <div className="relative z-10 text-center p-8">
-        <h1 className="text-5xl font-bold text-white drop-shadow-lg mb-4">{src.text}</h1>
-        {src.subText && <p className="text-xl text-white/80">{src.subText}</p>}
-      </div>
+      {hasText && (
+        <div className="relative z-10 text-center p-8">
+          {src.text?.trim() && <h1 className="text-5xl font-bold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] mb-4">{src.text}</h1>}
+          {src.subText?.trim() && <p className="text-xl text-white/90 drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">{src.subText}</p>}
+        </div>
+      )}
     </div>
   )
 }

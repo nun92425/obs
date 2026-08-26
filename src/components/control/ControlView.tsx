@@ -113,13 +113,14 @@ export function ControlView({ streams, setStreams }: { streams: Map<string, Medi
   const renderPreviewProps = () => {
     if (!preview) return null
     if (preview.type === 'standby') {
+      const hasText = !!((preview as any).text?.trim() || (preview as any).subText?.trim())
       return (
         <div className="space-y-2 bg-zinc-900 p-3 rounded">
           <div className="text-sm font-bold">待機画面編集</div>
           <input
             value={(preview as any).text}
             onChange={(e) => updateSource(preview.id, { text: e.target.value } as any)}
-            placeholder="メイン文"
+            placeholder="メイン文（空にすると文字なしで動画のみ）"
             className="w-full bg-zinc-800 rounded px-2 py-1 text-sm"
           />
           <input
@@ -128,7 +129,7 @@ export function ControlView({ streams, setStreams }: { streams: Map<string, Medi
             placeholder="サブ文"
             className="w-full bg-zinc-800 rounded px-2 py-1 text-sm"
           />
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-center flex-wrap">
             <label className="text-xs">背景</label>
             <input type="color" value={(preview as any).bgColor || '#0f172a'} onChange={(e) => updateSource(preview.id, { bgColor: e.target.value } as any)} />
             <label className="text-xs ml-2">動画</label>
@@ -143,7 +144,41 @@ export function ControlView({ streams, setStreams }: { streams: Map<string, Medi
               }}
               className="text-xs"
             />
+            {(preview as any).url && (
+              <button
+                onClick={() => updateSource(preview.id, { url: undefined } as any)}
+                className="text-xs px-2 py-1 bg-zinc-800 rounded hover:bg-red-900"
+              >
+                動画クリア
+              </button>
+            )}
           </div>
+          <div className="flex gap-3 items-center bg-zinc-800/50 p-2 rounded">
+            <label className="flex items-center gap-1 text-xs">
+              <input
+                type="checkbox"
+                checked={(preview as any).enableOverlay ?? true}
+                onChange={(e) => updateSource(preview.id, { enableOverlay: e.target.checked } as any)}
+              />
+              暗幕
+            </label>
+            <label className="flex items-center gap-1 text-xs flex-1">
+              濃さ
+              <input
+                type="range"
+                min={0}
+                max={0.8}
+                step={0.05}
+                value={(preview as any).overlayOpacity ?? 0.35}
+                onChange={(e) => updateSource(preview.id, { overlayOpacity: parseFloat(e.target.value) } as any)}
+                disabled={!((preview as any).enableOverlay ?? true)}
+                className="flex-1"
+              />
+              <span className="w-8 text-right">{Math.round(((preview as any).overlayOpacity ?? 0.35) * 100)}%</span>
+            </label>
+            <span className="text-[11px] text-zinc-500">{hasText ? '文字あり時のみ表示' : '文字なし→暗幕なしで動画100%'}</span>
+          </div>
+          <p className="text-[11px] text-zinc-500">ヒント: 文字を空にすると暗幕は自動で消え、動画が100%の明るさでループします。</p>
         </div>
       )
     }

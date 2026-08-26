@@ -45,6 +45,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       text: 'まもなく開演します',
       subText: 'しばらくお待ちください',
       bgColor: '#0f172a',
+      overlayOpacity: 0.35,
+      enableOverlay: true,
     } as Source,
     {
       id: 'black-1',

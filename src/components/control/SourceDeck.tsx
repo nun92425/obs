@@ -74,7 +74,16 @@ export function SourceDeck() {
 
   const onAddStandby = () => {
     const id = uuid()
-    addSource({ id, type: 'standby', name: '待機ループ', text: 'まもなく開演します', subText: 'しばらくお待ちください', bgColor: '#0f172a' } as any)
+    addSource({
+      id,
+      type: 'standby',
+      name: '待機ループ',
+      text: 'まもなく開演します',
+      subText: 'しばらくお待ちください',
+      bgColor: '#0f172a',
+      overlayOpacity: 0.35,
+      enableOverlay: true,
+    } as any)
   }
 
   const onAddCamera = () => {

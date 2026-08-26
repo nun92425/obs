@@ -74,6 +74,9 @@ export type StandbySource = BaseSource & {
   text: string
   subText?: string
   bgColor?: string
+  overlayOpacity?: number // 0-1, default 0.35
+  enableOverlay?: boolean // default true (auto hides when text empty)
+  blobId?: string
 }
 
 export type BlackSource = BaseSource & {
