@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: obs-signaling
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build:server
+    startCommand: node dist-server/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000

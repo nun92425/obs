@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0f0f12;
+  --panel: #1a1a1e;
+  --border: #2a2a30;
+  --accent: #e11d48;
+}
+
+* { scrollbar-width: thin; scrollbar-color: #333 transparent; }
+body { margin:0; background: var(--bg); color: #e5e5e5; font-family: system-ui, -apple-system, sans-serif; }
